@@ -3,100 +3,107 @@ import os
 import random
 import re
 import sys
-from collections import defaultdict, Counter
-import bisect
 
 # https://www.hackerrank.com/challenges/decibinary-numbers
 
-class Decibinary:
-    def __init__(self):
-        self.COUNT = [[1, 1]]
-        self.cum_sums = [1]
-        self.gen_min_dig()
-        # print(self.min_dig)
-        # tests = [9, 27, 63, 135, 279, 567, 1143]
-        # print([(t, [self.calc_min_digits(x) for x in range(t - 1, t + 2)]) for t in tests])
-
-        # self.extend(1000)
-        # print('COUNT', self.COUNT, 'CUMSUMS', self.cum_sums, f'N={len(self.cum_sums)}', sep='\n')
-
-        
-    def gen_min_dig(self, max_pow=20):
-        self.min_dig = [0] 
-        for p in range(max_pow):
-            self.min_dig.append(9 * 2 ** p + self.min_dig[-1])
+def log(fmt, *args, **kwds):
+    if not log.verbose:
+        return
+    print(fmt.format(*args, **kwds), file=sys.stderr)
+log.verbose = False
 
 
-    def calc_min_digits(self, n):
-        return bisect.bisect_left(self.min_dig, n)
+def makeTable(dmax):
+    bits = math.ceil(math.log2(dmax))
+    table = [[0]*dmax for _ in range(bits)]
+    for ii in range(10):
+        table[0][ii] = 1
+    for bit in range(1, bits):
+        m2 = 1 << bit
+        t0 = table[bit]
+        t1 = table[bit-1]
+        # Limit line to number of possible values that can be represented with
+        # the current number of decibits
+        maxlen = 10**(bit+1)
+        if maxlen > dmax:
+            maxlen = dmax
+        for ii in range(maxlen):
+            # NB: min() is slower than a conditional
+            pmax = ii//m2
+            if pmax > 9:
+                pmax = 9
+            # NB: sum() is slower than a for loop
+            total = 0
+            for pos in range(ii - pmax*m2, ii + m2, m2):
+                total += t1[pos]
+            t0[ii] = total
+    return table
 
+lookup = makeTable(287000)
+agg = lookup[-1][:]
+for ii in range(1, len(agg)):
+    agg[ii] += agg[ii-1]
+#print(lookup[-1], file=sys.stderr)
+#print(agg, file=sys.stderr)
 
-    # Complete the decibinaryNumbers function below.
-    def decibinaryNumbers(self, x):
-        if x > self.cum_sums[-1]:
-            self.extend(x)
-        return self.get(x)
+def decibinaryHelper(num, x):
+    pos = 0
+    result = 0
+    for bit in range(len(lookup)-1, 0, -1):
+        #log('num={} bits={}', num, bit)
+        digit = 1 << bit
+        tl = lookup[bit-1]
+        for kk in range(0, (num//digit) + 1):
+            remain = num - kk*digit
+            #log('d={} r={}', kk*digit, remain)
+            count = tl[remain]
+            #log('p={} k={} c={}', pos, kk, count)
+            if (pos + count) <= x:
+                pos += count
+            else:
+                # Found the correct digit
+                result = (result * 10) + kk
+                #log('d={} r={} rem={}', kk, result, remain)
+                num = remain
+                break
+    result = (result * 10) + num
+    return result
 
+def findNum(x):
+    start = 1
+    end = len(agg) - 1
+    while start != end:
+        num = (start + end) // 2
+        if agg[num] == x:
+            return num
+        elif agg[num] > x:
+            end = num
+        else:
+            start = num + 1
+    return start
 
-    def extend(self, num):
-        n = len(self.COUNT)
-
-        while self.cum_sums[-1] < num:
-            min_digits = self.calc_min_digits(n)
-            max_digits = math.floor(math.log(n, 2)) + 1 
-
-            self.COUNT.append([0] * (max_digits + 1))
-            for m in range(min_digits, max_digits + 1):
-                self.COUNT[n][m] = self.COUNT[n][m - 1]
-                for d in range(1, 10):
-                    remainder = n - d * 2 ** (m - 1)
-                    if remainder >= 0:
-                        self.COUNT[n][m] += self.COUNT[remainder][min(m - 1, len(self.COUNT[remainder]) - 1)] #BUGGY FUCK 
-                    else: 
-                        break
-            self.cum_sums.append(self.cum_sums[-1] + self.COUNT[-1][-1])
-            n += 1            
-            
-    def get(self, x):
-        if x == 1:
-            return 0
-
-        n = bisect.bisect_left(self.cum_sums, x)
-        n_rem = x - self.cum_sums[n - 1]
-        m = bisect.bisect_left(self.COUNT[n], n_rem)
-        m_rem = n_rem - self.COUNT[n][m - 1]
-
-        return self.reconstruct(n, m, m_rem)
-
-
-    def reconstruct(self, n, m, rem, partial=0):
-        if m == 1:
-            return partial + n
-
-        skipped = 0
-        for k in range(not partial, 10):
-            dig_val = k * 2 ** (m - 1)
-            smaller = n - dig_val
-            s_m = min(len(self.COUNT[smaller]) - 1, m - 1)
-            skipped += self.COUNT[smaller][s_m]
-            if skipped >= rem:
-                # set
-                partial += k * 10 ** (m - 1) 
-                new_rem = rem - (skipped - self.COUNT[smaller][s_m])
-                return self.reconstruct(smaller, s_m, new_rem, partial) 
-
+def decibinaryNumbers(x):
+    if x == 1:
+        return 0
+    if x > agg[-1]:
+        raise ValueError(x)
+    # for num in range(1, len(agg)):
+    #     if agg[num] >= x:
+    #         break
+    num = findNum(x)
+    pos = agg[num-1] + 1
+    result = decibinaryHelper(num, x-pos)
+    return result
 
 if __name__ == '__main__':
     fptr = open(os.environ['OUTPUT_PATH'], 'w')
 
     q = int(input())
 
-    db = Decibinary()
-
     for q_itr in range(q):
         x = int(input())
 
-        result = db.decibinaryNumbers(x)
+        result = decibinaryNumbers(x)
 
         fptr.write(str(result) + '\n')
 
